@@ -5,75 +5,124 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <semaphore.h>
+#include <time.h>
 
+#define NUM_BLOCKS 5
+#define BLOCK_SIZE 2
 
 typedef struct {
-	int intValue;
+    int intValue;
 } DataBlock;
 
-
-int main() {
-	int id;
-	DataBlock *memory, *ptr;
-	key_t key;
-	int i;
-	
-	if ((key = ftok(".", 'R')) == -1) {
-		perror("ftok");
-		exit(1);
-	}
-	
-	if ((id = shmget(key, 5 * sizeof(DataBlock), IPC_CREAT | 0666)) == -1) {
-		perror("shmget");
-		exit(1);
-	}
-	
-	if ((memory = (DataBlock *)shmat(id, NULL, 0)) == (DataBlock *) -1) {
-		perror("shmat");
-		exit(1);
-	}
-	
-	for (i = 0, ptr = memory; i < 5; ++i, ++ptr) {
-		ptr->intValue = 0;
-	}
-	
-	for (i = 0; i < 5; ++i) {
-		pid_t pid = fork();
-		if (pid == -1) {
-			perror("fork");
-			exit(1);
-		} else if (pid == 0) {
-			srand(getpid());
-			memory[i].intValue = rand()%100;
-		
-			exit(0);
-		} 
-	}
-	
-	for (i = 0; i < 5; ++i) {
-		wait(NULL);
-	}
-	
-	int sum = 0;
-	
-	for (i = 0, ptr = memory; i < 5; ++i, ++ptr) {
-		sum += ptr->intValue;
-		printf("VAL: %d\n", ptr->intValue);
-	}
-	
-	printf("SUM: %d\n", sum);
-	
-	if(shmdt(memory) == -1) {
-		perror("smdt");
-		exit(1);
-	}
-	
-	if (shmctl(id, IPC_RMID, NULL) == -1) {
-		perror("shmctl");
-		exit(1);
-	}
-	
-	return 0;
+void create_agents(key_t key, int id[], DataBlock *memory[], sem_t *sem[]) {
+    int i;
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror("fork");
+            exit(1);
+        } else if (pid == 0) {
+            key_t process_key = key + i; 
+            sem_wait(sem[i]); 
+            printf("*****\nProcess %d\n", getpid());
+            srand(time(NULL) + getpid() + i);
+            for (int j = 0; j < BLOCK_SIZE; ++j) {
+                memory[i][j].intValue = rand() % 100;
+                printf("\n Shared memory ID: %d\n Key: %d\n Memory[%d][%d].intValue = %d\n",
+                       id[i], process_key, i, j, memory[i][j].intValue);
+            }
+            printf("*****");
+            sem_post(sem[i]); 
+            exit(0);
+        }
+    }
 }
 
+int main() {
+    int id[NUM_BLOCKS];
+    DataBlock *memory[NUM_BLOCKS];
+    key_t key;
+    int i;
+    sem_t *sem[NUM_BLOCKS];
+
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        char sem_name[20];
+        sprintf(sem_name, "/semaphore%d", i);
+        sem[i] = (sem_t *)malloc(sizeof(sem_t));
+        if (sem[i] == NULL) {
+            perror("malloc");
+            exit(1);
+        }
+        if (sem_init(sem[i], 1, 1) == -1) {
+            perror("sem_init");
+            exit(1);
+        }
+    }
+
+    if ((key = ftok(".", 'R')) == -1) {
+        perror("ftok");
+        exit(1);
+    }
+
+    printf("*****\nMain Process PID: %d\n", getpid());
+
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        key_t process_key = key + i;
+        if ((id[i] = shmget(process_key, BLOCK_SIZE * sizeof(DataBlock), IPC_CREAT | 0666)) == -1) {
+            perror("shmget");
+            exit(1);
+        }
+        printf("Shared memory for Block %d: ID: %d, Key: %d\n", i + 1, id[i], process_key);
+        memory[i] = (DataBlock *)shmat(id[i], NULL, 0);
+        if (memory[i] == (DataBlock *) -1) {
+            perror("shmat");
+            exit(1);
+        }
+    }
+
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        for (int j = 0; j < BLOCK_SIZE; ++j) {
+            memory[i][j].intValue = 0;
+        }
+    }
+
+    create_agents(key, id, memory, sem);
+
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        wait(NULL);
+    }
+
+    int sum = 0;
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        for (int j = 0; j < BLOCK_SIZE; ++j) {
+            sum += memory[i][j].intValue;
+        }
+    }
+
+    printf("\nSUM: %d\n", sum);
+
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        if (shmdt(memory[i]) == -1) {
+            perror("shmdt");
+            exit(1);
+        }
+    }
+
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        if (shmctl(id[i], IPC_RMID, NULL) == -1) {
+            perror("shmctl");
+            exit(1);
+        }
+    }
+
+    for (i = 0; i < NUM_BLOCKS; ++i) {
+        if (sem_destroy(sem[i]) == -1) {
+            perror("sem_destroy");
+        }
+        free(sem[i]);
+    }
+
+    return 0;
+}
 
