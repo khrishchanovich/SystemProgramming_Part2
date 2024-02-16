@@ -31,16 +31,16 @@ void *thread_function(void *args) {
 
 int main() {
     pthread_t threads[NUM_BLOCKS];
-    int thread_args[NUM_BLOCKS];
+    int id[NUM_BLOCKS];
 
     for (int i = 0; i < NUM_BLOCKS; ++i) {
         sem_init(&semaphores[i], 0, 1);
-        thread_args[i] = i;
+        id[i] = i;
         sums[i] = 0;
     }
 
     for (int i = 0; i < NUM_BLOCKS; ++i) {
-        pthread_create(&threads[i], NULL, thread_function, &thread_args[i]);
+        pthread_create(&threads[i], NULL, thread_function, &id[i]);
     }
 
     for (int i = 0; i < NUM_BLOCKS; ++i) {

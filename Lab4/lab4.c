@@ -8,8 +8,8 @@
 #include <semaphore.h>
 #include <time.h>
 
-#define NUM_BLOCKS 5
-#define BLOCK_SIZE 2
+#define NUM_BLOCKS 5 
+#define BLOCK_SIZE 1
 
 typedef struct {
     int intValue;
@@ -41,10 +41,13 @@ void create_agents(key_t key, int id[], DataBlock *memory[], sem_t *sem[]) {
 
 int main() {
     int id[NUM_BLOCKS];
-    DataBlock *memory[NUM_BLOCKS];
     key_t key;
-    int i;
+    DataBlock *memory[NUM_BLOCKS];
+    
     sem_t *sem[NUM_BLOCKS];
+    
+    int i;
+    
 
     for (i = 0; i < NUM_BLOCKS; ++i) {
         char sem_name[20];
@@ -54,6 +57,7 @@ int main() {
             perror("malloc");
             exit(1);
         }
+        
         if (sem_init(sem[i], 1, 1) == -1) {
             perror("sem_init");
             exit(1);
@@ -69,7 +73,7 @@ int main() {
 
     for (i = 0; i < NUM_BLOCKS; ++i) {
         key_t process_key = key + i;
-        if ((id[i] = shmget(process_key, BLOCK_SIZE * sizeof(DataBlock), IPC_CREAT | 0666)) == -1) {
+        if ((id[i] = shmget(process_key, BLOCK_SIZE * sizeof(DataBlock), IPC_CREAT | IPC_EXCL | 0644)) == -1) {
             perror("shmget");
             exit(1);
         }
